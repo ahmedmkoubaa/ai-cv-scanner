@@ -99,14 +99,17 @@ class CVGeneratorService:
         self._renderer = renderer
         self._api_request_delay_seconds = api_request_delay_seconds
         self._last_request_start: float | None = None
+        self._used_names: set[str] = set()
 
     def generate_batch(self, count: int, output_dir: Path) -> list[Path]:
         generated: list[Path] = []
         hints = self._select_hints(count)
+        self._used_names.clear()
 
         for index, hint in enumerate(hints, start=1):
             logger.info("Generating CV %d/%d: %s", index, count, hint)
             profile = self._generate_profile(hint, index)
+            self._used_names.add(self._normalize_name(profile.contact.full_name))
             filename = profile_to_filename(profile, index)
             output_path = output_dir / filename
 
@@ -128,11 +131,26 @@ class CVGeneratorService:
             hints.append(DIVERSITY_HINTS[len(hints) % len(DIVERSITY_HINTS)])
         return hints[:count]
 
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """Lowercase and collapse whitespace for reliable comparison."""
+        return " ".join(name.lower().split())
+
     def _generate_profile(self, diversity_hint: str, index: int) -> CVProfile:
+        exclusion_note = ""
+        if self._used_names:
+            names_list = ", ".join(sorted(self._used_names))
+            exclusion_note = (
+                f"\n\nIMPORTANT: The following names have already been used and "
+                f"MUST NOT be reused. Generate a completely different first name "
+                f"AND last name combination: [{names_list}]"
+            )
+
         prompt = (
             f"Generate CV #{index} for this candidate archetype: {diversity_hint}\n"
             "Ensure this profile is distinct from typical templates — vary industry, "
             "seniority, geography, and skill emphasis."
+            f"{exclusion_note}"
         )
 
         last_error: Exception | None = None
@@ -140,7 +158,16 @@ class CVGeneratorService:
             try:
                 raw = self._generate_with_rate_limit(prompt)
                 data = self._parse_json(raw)
-                return CVProfile.model_validate(data)
+                profile = CVProfile.model_validate(data)
+
+                # Reject duplicate names and retry
+                normalized = self._normalize_name(profile.contact.full_name)
+                if normalized in self._used_names:
+                    raise ValueError(
+                        f"Duplicate name '{profile.contact.full_name}' — retrying"
+                    )
+
+                return profile
             except Exception as exc:
                 last_error = exc
                 logger.warning(
