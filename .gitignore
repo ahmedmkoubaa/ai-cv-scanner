@@ -1,0 +1,28 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Generated CV data
+data/*.pdf
+
+# Node (frontend, future)
+node_modules/
+dist/
+
+# ChromaDB (backend, future)
+backend/chroma_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
