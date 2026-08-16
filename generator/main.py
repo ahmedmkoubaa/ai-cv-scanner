@@ -44,7 +44,7 @@ def main() -> int:
     logger.info("Output directory: %s", output_dir)
     if settings.api_request_delay_seconds > 0:
         logger.info(
-            "API request delay: %.1fs between calls",
+            "API request interval: at least %.1fs between request starts",
             settings.api_request_delay_seconds,
         )
     else:

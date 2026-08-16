@@ -98,7 +98,7 @@ class CVGeneratorService:
         self._llm = llm
         self._renderer = renderer
         self._api_request_delay_seconds = api_request_delay_seconds
-        self._has_called_llm = False
+        self._last_request_start: float | None = None
 
     def generate_batch(self, count: int, output_dir: Path) -> list[Path]:
         generated: list[Path] = []
@@ -156,17 +156,22 @@ class CVGeneratorService:
         ) from last_error
 
     def _generate_with_rate_limit(self, prompt: str) -> str:
-        if self._has_called_llm:
-            self._wait_before_api_request()
-        self._has_called_llm = True
+        self._wait_until_interval_elapsed()
+        self._last_request_start = time.monotonic()
         return self._llm.generate(prompt, system=SYSTEM_PROMPT)
 
-    def _wait_before_api_request(self) -> None:
+    def _wait_until_interval_elapsed(self) -> None:
         delay = self._api_request_delay_seconds
-        if delay <= 0:
+        if delay <= 0 or self._last_request_start is None:
             return
-        logger.info("Waiting %.1fs before next API request (quota limit)", delay)
-        time.sleep(delay)
+
+        elapsed = time.monotonic() - self._last_request_start
+        remaining = delay - elapsed
+        if remaining > 0:
+            logger.info(
+                "Waiting %.1fs before next API request (quota limit)", remaining
+            )
+            time.sleep(remaining)
 
     @staticmethod
     def _parse_json(raw: str) -> dict:
