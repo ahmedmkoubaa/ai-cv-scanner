@@ -16,9 +16,11 @@ class Settings:
     openrouter_model: str
     output_dir: Path
     cv_count: int
+    api_request_delay_seconds: float
 
     @classmethod
     def from_env(cls) -> "Settings":
+        delay_raw = os.getenv("API_REQUEST_DELAY_SECONDS", "4")
         return cls(
             llm_provider=os.getenv("LLM_PROVIDER", "gemini").lower(),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
@@ -29,6 +31,7 @@ class Settings:
             ),
             output_dir=Path(os.getenv("OUTPUT_DIR", "../data")),
             cv_count=int(os.getenv("CV_COUNT", "28")),
+            api_request_delay_seconds=float(delay_raw),
         )
 
     def resolve_output_dir(self, base_dir: Path) -> Path:

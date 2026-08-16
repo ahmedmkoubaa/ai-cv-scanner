@@ -42,6 +42,13 @@ def main() -> int:
 
     logger.info("Provider: %s", settings.llm_provider)
     logger.info("Output directory: %s", output_dir)
+    if settings.api_request_delay_seconds > 0:
+        logger.info(
+            "API request delay: %.1fs between calls",
+            settings.api_request_delay_seconds,
+        )
+    else:
+        logger.info("API request delay: disabled")
     logger.info("Generating %d CV PDFs...", count)
 
     try:
@@ -50,7 +57,11 @@ def main() -> int:
         logger.error("%s", exc)
         return 1
 
-    service = CVGeneratorService(llm=llm, renderer=ReportLabRenderer())
+    service = CVGeneratorService(
+        llm=llm,
+        renderer=ReportLabRenderer(),
+        api_request_delay_seconds=settings.api_request_delay_seconds,
+    )
     try:
         paths = service.generate_batch(count=count, output_dir=output_dir)
     except Exception as exc:

@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 from adapters.llm.base import LLMAdapter
@@ -87,9 +88,17 @@ DIVERSITY_HINTS = [
 class CVGeneratorService:
     MAX_RETRIES = 3
 
-    def __init__(self, llm: LLMAdapter, renderer: ReportLabRenderer) -> None:
+    def __init__(
+        self,
+        llm: LLMAdapter,
+        renderer: ReportLabRenderer,
+        *,
+        api_request_delay_seconds: float = 4.0,
+    ) -> None:
         self._llm = llm
         self._renderer = renderer
+        self._api_request_delay_seconds = api_request_delay_seconds
+        self._has_called_llm = False
 
     def generate_batch(self, count: int, output_dir: Path) -> list[Path]:
         generated: list[Path] = []
@@ -129,7 +138,7 @@ class CVGeneratorService:
         last_error: Exception | None = None
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
-                raw = self._llm.generate(prompt, system=SYSTEM_PROMPT)
+                raw = self._generate_with_rate_limit(prompt)
                 data = self._parse_json(raw)
                 return CVProfile.model_validate(data)
             except Exception as exc:
@@ -145,6 +154,19 @@ class CVGeneratorService:
         raise RuntimeError(
             f"Failed to generate CV #{index} after {self.MAX_RETRIES} attempts"
         ) from last_error
+
+    def _generate_with_rate_limit(self, prompt: str) -> str:
+        if self._has_called_llm:
+            self._wait_before_api_request()
+        self._has_called_llm = True
+        return self._llm.generate(prompt, system=SYSTEM_PROMPT)
+
+    def _wait_before_api_request(self) -> None:
+        delay = self._api_request_delay_seconds
+        if delay <= 0:
+            return
+        logger.info("Waiting %.1fs before next API request (quota limit)", delay)
+        time.sleep(delay)
 
     @staticmethod
     def _parse_json(raw: str) -> dict:
