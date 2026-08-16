@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from domain.models import DocumentChunk
+from domain.models import DocumentChunk, SourceDocument
 
 
 class LLMPort(Protocol):
@@ -18,6 +18,10 @@ class PDFParserPort(Protocol):
 class VectorStorePort(Protocol):
     def list_indexed_files(self) -> set[str]:
         """Return source file names already stored in the vector database."""
+        ...
+
+    def list_indexed_sources(self) -> list[SourceDocument]:
+        """Return one entry per indexed CV with file and candidate metadata."""
         ...
 
     def add_chunks(self, chunks: list[DocumentChunk]) -> None:

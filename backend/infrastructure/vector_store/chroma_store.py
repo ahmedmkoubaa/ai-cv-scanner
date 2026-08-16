@@ -1,7 +1,7 @@
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-from domain.models import DocumentChunk
+from domain.models import DocumentChunk, SourceDocument
 from domain.ports import VectorStorePort
 
 COLLECTION_NAME = "cv_documents"
@@ -20,13 +20,26 @@ class ChromaVectorStore:
         )
 
     def list_indexed_files(self) -> set[str]:
+        return {source.file_name for source in self.list_indexed_sources()}
+
+    def list_indexed_sources(self) -> list[SourceDocument]:
         result = self._collection.get(include=["metadatas"])
         metadatas = result.get("metadatas") or []
-        return {
-            meta["source_file"]
-            for meta in metadatas
-            if meta and "source_file" in meta
-        }
+
+        by_file: dict[str, SourceDocument] = {}
+        for meta in metadatas:
+            if not meta or "source_file" not in meta:
+                continue
+            file_name = meta["source_file"]
+            if file_name in by_file:
+                continue
+            candidate_name = meta.get("candidate_name") or _name_from_filename(file_name)
+            by_file[file_name] = SourceDocument(
+                file_name=file_name,
+                candidate_name=candidate_name,
+            )
+
+        return sorted(by_file.values(), key=lambda source: source.candidate_name.lower())
 
     def add_chunks(self, chunks: list[DocumentChunk]) -> None:
         if not chunks:
@@ -81,6 +94,11 @@ class ChromaVectorStore:
                 )
             )
         return chunks
+
+
+def _name_from_filename(file_name: str) -> str:
+    stem = file_name.rsplit(".", 1)[0]
+    return stem.replace("_", " ").title()
 
 
 def create_chroma_store(persist_dir: str, embedding_model: str) -> VectorStorePort:

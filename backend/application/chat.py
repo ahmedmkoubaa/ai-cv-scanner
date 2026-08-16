@@ -1,3 +1,4 @@
+from application.query_intent import QueryIntent, detect_query_intent
 from domain.models import ChatResult, DocumentChunk, SourceDocument
 from domain.ports import LLMPort, VectorStorePort
 
@@ -28,7 +29,42 @@ class ChatUseCase:
                 source_documents=[],
             )
 
-        chunks = self._vector_store.query(trimmed, self._retrieval_top_k)
+        intent = detect_query_intent(trimmed)
+        if intent in (QueryIntent.INVENTORY_COUNT, QueryIntent.INVENTORY_LIST):
+            return self._handle_inventory_query(intent)
+
+        return self._handle_semantic_query(trimmed)
+
+    def _handle_inventory_query(self, intent: QueryIntent) -> ChatResult:
+        sources = self._vector_store.list_indexed_sources()
+        if not sources:
+            return ChatResult(
+                response=(
+                    "No CV data is available yet. Please ensure PDFs have been "
+                    "ingested into the system."
+                ),
+                source_documents=[],
+            )
+
+        total = len(sources)
+        if intent is QueryIntent.INVENTORY_LIST:
+            names = [source.candidate_name for source in sources]
+            names_text = "\n".join(f"- {name}" for name in names)
+            response = (
+                f"There are {total} indexed candidate CVs in the system:\n\n"
+                f"{names_text}"
+            )
+        else:
+            label = "CV" if total == 1 else "CVs"
+            response = (
+                f"There are currently {total} candidate {label} fully indexed "
+                "in the system."
+            )
+
+        return ChatResult(response=response, source_documents=sources)
+
+    def _handle_semantic_query(self, query: str) -> ChatResult:
+        chunks = self._vector_store.query(query, self._retrieval_top_k)
         if not chunks:
             return ChatResult(
                 response=(
@@ -38,7 +74,7 @@ class ChatUseCase:
                 source_documents=[],
             )
 
-        prompt = self._build_prompt(trimmed, chunks)
+        prompt = self._build_prompt(query, chunks)
         response = self._llm.generate(prompt, system=SYSTEM_PROMPT)
         source_documents = self._collect_sources(chunks)
 
