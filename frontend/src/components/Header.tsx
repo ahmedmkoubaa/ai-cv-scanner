@@ -1,7 +1,7 @@
 export function Header() {
   return (
-    <header className="border-b border-zinc-200 bg-white shadow-sm">
-      <div className="mx-auto flex max-w-4xl flex-col gap-4 px-4 py-5 sm:px-6">
+    <header className="sticky top-0 z-50 border-b border-zinc-200/80 bg-white/90 shadow-sm backdrop-blur-md transition-all">
+      <div className="mx-auto flex max-w-4xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex items-baseline gap-1">
@@ -20,7 +20,7 @@ export function Header() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-zinc-200 bg-leadtech-offwhite px-4 py-3">
+        <div className="rounded-xl border border-zinc-200/80 bg-leadtech-offwhite/80 px-4 py-3">
           <p className="text-sm leading-relaxed text-zinc-700 sm:text-base">
             <span className="font-semibold text-leadtech-charcoal">
               Leadtech Candidate Search

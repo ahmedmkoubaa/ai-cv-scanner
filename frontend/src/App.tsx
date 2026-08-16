@@ -8,7 +8,7 @@ export default function App() {
   const { messages, isLoading, error, sendMessage, clearError } = useChat();
 
   return (
-    <div className="min-h-screen bg-leadtech-surface">
+    <div className="flex min-h-screen flex-col bg-leadtech-surface">
       <Header />
 
       <ChatWindow>

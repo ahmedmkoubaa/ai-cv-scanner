@@ -1,3 +1,4 @@
+import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types/chat";
 import { SourceBadges } from "./SourceBadges";
 
@@ -22,7 +23,29 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               : "rounded-bl-md border border-zinc-200 bg-leadtech-offwhite text-leadtech-charcoal"
           }`}
         >
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          {isUser ? (
+            <p className="whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <div className="markdown-content">
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                  strong: ({ children }) => (
+                    <strong className="font-semibold text-leadtech-charcoal">{children}</strong>
+                  ),
+                  ul: ({ children }) => (
+                    <ul className="my-2 flex flex-col gap-1.5 pl-5 list-disc marker:text-leadtech-red">{children}</ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="my-2 flex flex-col gap-1.5 pl-5 list-decimal marker:text-leadtech-red">{children}</ol>
+                  ),
+                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
 
         {!isUser && message.sourceDocuments && message.sourceDocuments.length > 0 && (
