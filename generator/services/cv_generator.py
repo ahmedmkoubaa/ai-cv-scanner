@@ -99,17 +99,20 @@ class CVGeneratorService:
         self._renderer = renderer
         self._api_request_delay_seconds = api_request_delay_seconds
         self._last_request_start: float | None = None
-        self._used_names: set[str] = set()
 
     def generate_batch(self, count: int, output_dir: Path) -> list[Path]:
         generated: list[Path] = []
         hints = self._select_hints(count)
-        self._used_names.clear()
 
-        for index, hint in enumerate(hints, start=1):
-            logger.info("Generating CV %d/%d: %s", index, count, hint)
-            profile = self._generate_profile(hint, index)
-            self._used_names.add(self._normalize_name(profile.contact.full_name))
+        # Step 1: Pre-generate all unique candidate names (First + Last Name) in one shot
+        logger.info("Pre-generating %d unique candidate names in initial query...", count)
+        names = self._pre_generate_names(count)
+        logger.info("Generated %d unique names: %s", len(names), ", ".join(names))
+
+        # Step 2: Generate each CV sequentially with the assigned unique name
+        for index, (hint, name) in enumerate(zip(hints, names), start=1):
+            logger.info("Generating CV %d/%d: %s [%s]", index, count, hint, name)
+            profile = self._generate_profile(hint, name, index)
             filename = profile_to_filename(profile, index)
             output_path = output_dir / filename
 
@@ -131,26 +134,65 @@ class CVGeneratorService:
             hints.append(DIVERSITY_HINTS[len(hints) % len(DIVERSITY_HINTS)])
         return hints[:count]
 
-    @staticmethod
-    def _normalize_name(name: str) -> str:
-        """Lowercase and collapse whitespace for reliable comparison."""
-        return " ".join(name.lower().split())
+    def _pre_generate_names(self, count: int) -> list[str]:
+        prompt = (
+            f"Generate a JSON array containing exactly {count} distinct, realistic full names "
+            f"(first name + last name) for fictional job candidates. "
+            f"Every single combination of first name and last name must be unique. "
+            f"Ensure global diversity (varied cultural, gender, and regional origins).\n"
+            f"Return ONLY valid JSON matching this format: [\"First Last\", ...]"
+        )
 
-    def _generate_profile(self, diversity_hint: str, index: int) -> CVProfile:
-        exclusion_note = ""
-        if self._used_names:
-            names_list = ", ".join(sorted(self._used_names))
-            exclusion_note = (
-                f"\n\nIMPORTANT: The following names have already been used and "
-                f"MUST NOT be reused. Generate a completely different first name "
-                f"AND last name combination: [{names_list}]"
+        last_error: Exception | None = None
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            try:
+                raw = self._generate_with_rate_limit(prompt)
+                names = self._parse_name_list(raw, count)
+                return names
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Name pre-generation attempt %d/%d failed: %s",
+                    attempt,
+                    self.MAX_RETRIES,
+                    exc,
+                )
+
+        raise RuntimeError(
+            f"Failed to pre-generate {count} unique names after {self.MAX_RETRIES} attempts"
+        ) from last_error
+
+    def _parse_name_list(self, raw: str, expected_count: int) -> list[str]:
+        text = raw.strip()
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        parsed = json.loads(text)
+        if not isinstance(parsed, list):
+            raise ValueError("Expected a JSON array of names")
+
+        seen: set[str] = set()
+        unique_names: list[str] = []
+        for item in parsed:
+            name = str(item).strip()
+            normalized = " ".join(name.lower().split())
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique_names.append(name)
+
+        if len(unique_names) < expected_count:
+            raise ValueError(
+                f"Expected {expected_count} unique names, but only received {len(unique_names)}"
             )
 
+        return unique_names[:expected_count]
+
+    def _generate_profile(self, diversity_hint: str, assigned_name: str, index: int) -> CVProfile:
         prompt = (
             f"Generate CV #{index} for this candidate archetype: {diversity_hint}\n"
+            f"The candidate's full_name MUST be exactly: {assigned_name}\n"
             "Ensure this profile is distinct from typical templates — vary industry, "
             "seniority, geography, and skill emphasis."
-            f"{exclusion_note}"
         )
 
         last_error: Exception | None = None
@@ -158,16 +200,10 @@ class CVGeneratorService:
             try:
                 raw = self._generate_with_rate_limit(prompt)
                 data = self._parse_json(raw)
-                profile = CVProfile.model_validate(data)
-
-                # Reject duplicate names and retry
-                normalized = self._normalize_name(profile.contact.full_name)
-                if normalized in self._used_names:
-                    raise ValueError(
-                        f"Duplicate name '{profile.contact.full_name}' — retrying"
-                    )
-
-                return profile
+                # Ensure the full_name in the parsed contact matches the assigned unique name
+                if "contact" in data and isinstance(data["contact"], dict):
+                    data["contact"]["full_name"] = assigned_name
+                return CVProfile.model_validate(data)
             except Exception as exc:
                 last_error = exc
                 logger.warning(
